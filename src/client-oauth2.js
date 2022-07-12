@@ -1,14 +1,13 @@
 var Buffer = require('safe-buffer').Buffer
 var Querystring = require('querystring')
+var Url = require('url')
 var defaultRequest = require('./request')
-
-const DEFAULT_URL_BASE = 'https://example.org/'
 
 var btoa
 if (typeof Buffer === 'function') {
   btoa = btoaBuffer
 } else {
-  btoa = window.btoa.bind(window)
+  btoa = window.btoa
 }
 
 /**
@@ -20,7 +19,7 @@ module.exports = ClientOAuth2
  * Default headers for executing OAuth 2.0 flows.
  */
 var DEFAULT_HEADERS = {
-  Accept: 'application/json, application/x-www-form-urlencoded',
+  'Accept': 'application/json, application/x-www-form-urlencoded',
   'Content-Type': 'application/x-www-form-urlencoded'
 }
 
@@ -30,49 +29,49 @@ var DEFAULT_HEADERS = {
  * Reference: http://tools.ietf.org/html/rfc6749#section-4.1.2.1
  */
 var ERROR_RESPONSES = {
-  invalid_request: [
+  'invalid_request': [
     'The request is missing a required parameter, includes an',
     'invalid parameter value, includes a parameter more than',
     'once, or is otherwise malformed.'
   ].join(' '),
-  invalid_client: [
+  'invalid_client': [
     'Client authentication failed (e.g., unknown client, no',
     'client authentication included, or unsupported',
     'authentication method).'
   ].join(' '),
-  invalid_grant: [
+  'invalid_grant': [
     'The provided authorization grant (e.g., authorization',
     'code, resource owner credentials) or refresh token is',
     'invalid, expired, revoked, does not match the redirection',
     'URI used in the authorization request, or was issued to',
     'another client.'
   ].join(' '),
-  unauthorized_client: [
+  'unauthorized_client': [
     'The client is not authorized to request an authorization',
     'code using this method.'
   ].join(' '),
-  unsupported_grant_type: [
+  'unsupported_grant_type': [
     'The authorization grant type is not supported by the',
     'authorization server.'
   ].join(' '),
-  access_denied: [
+  'access_denied': [
     'The resource owner or authorization server denied the request.'
   ].join(' '),
-  unsupported_response_type: [
+  'unsupported_response_type': [
     'The authorization server does not support obtaining',
     'an authorization code using this method.'
   ].join(' '),
-  invalid_scope: [
+  'invalid_scope': [
     'The requested scope is invalid, unknown, or malformed.'
   ].join(' '),
-  server_error: [
+  'server_error': [
     'The authorization server encountered an unexpected',
     'condition that prevented it from fulfilling the request.',
     '(This error code is needed because a 500 Internal Server',
     'Error HTTP status code cannot be returned to the client',
     'via an HTTP redirect.)'
   ].join(' '),
-  temporarily_unavailable: [
+  'temporarily_unavailable': [
     'The authorization server is currently unable to handle',
     'the request due to a temporary overloading or maintenance',
     'of the server.'
@@ -161,19 +160,21 @@ function createUri (options, tokenType) {
   // Check the required parameters are set.
   expects(options, 'clientId', 'authorizationUri')
 
-  const qs = {
+  console.log(options.authorizationUri + '?' + Querystring.stringify(Object.assign({
     client_id: options.clientId,
     redirect_uri: options.redirectUri,
+    scope: sanitizeScope(options.scopes),
     response_type: tokenType,
     state: options.state
-  }
-  if (options.scopes !== undefined) {
-    qs.scope = sanitizeScope(options.scopes)
-  }
+  }, options.query)) + (options.access_type !== undefined ? '&access_type=' + options.access_type : '') + (options.grant_type !== undefined ? '&grant_type=' + options.grant_type : ''))
 
-  const sep = options.authorizationUri.includes('?') ? '&' : '?'
-  return options.authorizationUri + sep + Querystring.stringify(
-    Object.assign(qs, options.query))
+  return options.authorizationUri + '?' + Querystring.stringify(Object.assign({
+    client_id: options.clientId,
+    redirect_uri: options.redirectUri,
+    scope: sanitizeScope(options.scopes),
+    response_type: tokenType,
+    state: options.state
+  }, options.query)) + (options.access_type !== undefined ? '&access_type=' + options.access_type : '') + (options.grant_type !== undefined ? '&grant_type=' + options.grant_type : '')
 }
 
 /**
@@ -421,22 +422,18 @@ OwnerFlow.prototype.getToken = function (username, password, opts) {
   var self = this
   var options = Object.assign({}, this.client.options, opts)
 
-  const body = {
-    username: username,
-    password: password,
-    grant_type: 'password'
-  }
-  if (options.scopes !== undefined) {
-    body.scope = sanitizeScope(options.scopes)
-  }
-
   return this.client._request(requestOptions({
     url: options.accessTokenUri,
     method: 'POST',
     headers: Object.assign({}, DEFAULT_HEADERS, {
       Authorization: auth(options.clientId, options.clientSecret)
     }),
-    body: body
+    body: {
+      scope: sanitizeScope(options.scopes),
+      username: username,
+      password: password,
+      grant_type: 'password'
+    }
   }, options))
     .then(function (data) {
       return self.client.createToken(data)
@@ -475,8 +472,8 @@ TokenFlow.prototype.getUri = function (opts) {
  */
 TokenFlow.prototype.getToken = function (uri, opts) {
   var options = Object.assign({}, this.client.options, opts)
-  var url = typeof uri === 'object' ? uri : new URL(uri, DEFAULT_URL_BASE)
-  var expectedUrl = new URL(options.redirectUri, DEFAULT_URL_BASE)
+  var url = typeof uri === 'object' ? uri : Url.parse(uri, true)
+  var expectedUrl = Url.parse(options.redirectUri)
 
   if (typeof url.pathname === 'string' && url.pathname !== expectedUrl.pathname) {
     return Promise.reject(
@@ -495,7 +492,7 @@ TokenFlow.prototype.getToken = function (uri, opts) {
   // implementations (Instagram) have a bug where state is passed via query.
   var data = Object.assign(
     {},
-    typeof url.search === 'string' ? Querystring.parse(url.search.substr(1)) : (url.search || {}),
+    typeof url.query === 'string' ? Querystring.parse(url.query) : (url.query || {}),
     typeof url.hash === 'string' ? Querystring.parse(url.hash.substr(1)) : (url.hash || {})
   )
 
@@ -538,21 +535,16 @@ CredentialsFlow.prototype.getToken = function (opts) {
 
   expects(options, 'clientId', 'clientSecret', 'accessTokenUri')
 
-  const body = {
-    grant_type: 'client_credentials'
-  }
-
-  if (options.scopes !== undefined) {
-    body.scope = sanitizeScope(options.scopes)
-  }
-
   return this.client._request(requestOptions({
     url: options.accessTokenUri,
     method: 'POST',
     headers: Object.assign({}, DEFAULT_HEADERS, {
       Authorization: auth(options.clientId, options.clientSecret)
     }),
-    body: body
+    body: {
+      scope: sanitizeScope(options.scopes),
+      grant_type: 'client_credentials'
+    }
   }, options))
     .then(function (data) {
       return self.client.createToken(data)
@@ -596,25 +588,23 @@ CodeFlow.prototype.getToken = function (uri, opts) {
 
   expects(options, 'clientId', 'accessTokenUri')
 
-  var url = typeof uri === 'object' ? uri : new URL(uri, DEFAULT_URL_BASE)
+  var url = typeof uri === 'object' ? uri : Url.parse(uri, true)
 
   if (
     typeof options.redirectUri === 'string' &&
     typeof url.pathname === 'string' &&
-    url.pathname !== (new URL(options.redirectUri, DEFAULT_URL_BASE)).pathname
+    url.pathname !== Url.parse(options.redirectUri).pathname
   ) {
     return Promise.reject(
       new TypeError('Redirected path should match configured path, but got: ' + url.pathname)
     )
   }
 
-  if (!url.search || !url.search.substr(1)) {
+  if (!url.query) {
     return Promise.reject(new TypeError('Unable to process uri: ' + uri))
   }
 
-  var data = typeof url.search === 'string'
-    ? Querystring.parse(url.search.substr(1))
-    : (url.search || {})
+  var data = typeof url.query === 'string' ? Querystring.parse(url.query) : (url.query || {})
   var err = getAuthError(data)
 
   if (err) {
@@ -681,23 +671,18 @@ JwtBearerFlow.prototype.getToken = function (token, opts) {
   // Authentication of the client is optional, as described in
   // Section 3.2.1 of OAuth 2.0 [RFC6749]
   if (options.clientId) {
-    headers.Authorization = auth(options.clientId, options.clientSecret)
-  }
-
-  const body = {
-    grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-    assertion: token
-  }
-
-  if (options.scopes !== undefined) {
-    body.scope = sanitizeScope(options.scopes)
+    headers['Authorization'] = auth(options.clientId, options.clientSecret)
   }
 
   return this.client._request(requestOptions({
     url: options.accessTokenUri,
     method: 'POST',
     headers: headers,
-    body: body
+    body: {
+      scope: sanitizeScope(options.scopes),
+      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      assertion: token
+    }
   }, options))
     .then(function (data) {
       return self.client.createToken(data)
