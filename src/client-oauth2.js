@@ -166,7 +166,7 @@ function createUri (options, tokenType) {
     scope: sanitizeScope(options.scopes),
     response_type: tokenType,
     state: options.state
-  }, options.query)) + (options.access_type !== undefined ? '&access_type=' + options.access_type : '') + (options.grant_type !== undefined ? '&grant_type=' + options.grant_type : ''))
+  }, options.query)) + (options.access_type !== undefined ? '&access_type=' + options.access_type : '') + (options.grant_type !== undefined ? '&grant_type=' + options.grant_type : '') + (options.token_access_type !== undefined ? '&token_access_type=' + options.token_access_type : ''))
 
   return options.authorizationUri + '?' + Querystring.stringify(Object.assign({
     client_id: options.clientId,
@@ -174,7 +174,7 @@ function createUri (options, tokenType) {
     scope: sanitizeScope(options.scopes),
     response_type: tokenType,
     state: options.state
-  }, options.query)) + (options.access_type !== undefined ? '&access_type=' + options.access_type : '') + (options.grant_type !== undefined ? '&grant_type=' + options.grant_type : '')
+  }, options.query)) + (options.access_type !== undefined ? '&access_type=' + options.access_type : '') + (options.grant_type !== undefined ? '&grant_type=' + options.grant_type : '') + (options.token_access_type !== undefined ? '&token_access_type=' + options.token_access_type : '')
 }
 
 /**
